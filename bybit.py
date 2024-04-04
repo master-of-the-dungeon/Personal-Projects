@@ -18,6 +18,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 subscribers = set()  # Хранение chat_id подписчиков
 thresholds = {}  # Словарь для хранения пользовательских порогов изменения открытого интереса
+intervals = {}  # Словарь для хранения пользовательских интервалов времени
 
 def get_all_symbols():
     url = "https://api.bybit.com/v2/public/symbols"
@@ -78,7 +79,7 @@ def monitor_OI_changes():
                         message = f"ВНИМАНИЕ: OI для {symbol} изменился на {change:.2f}% за последние {user_interval} минут(ы)."
                         bot.send_message(chat_id, message)
                         logger.info(message)
-            time.sleep(1)
+            time.sleep(60)  # Чтобы избежать слишком частых запросов, лучше установить паузу
 
 @bot.message_handler(commands=['start'])
 def start_message(message):
@@ -107,7 +108,6 @@ def set_threshold(message):
 def set_interval(message):
     chat_id = message.chat.id
     try:
-        # Пользователь должен указать интервал в минутах
         value = int(message.text.split()[1])
         if value < 1:  # Проверяем, чтобы значение было положительным
             raise ValueError("Интервал должен быть больше 0")
@@ -118,10 +118,11 @@ def set_interval(message):
         bot.send_message(chat_id, "Используйте команду в формате: /set_interval <минуты>.")
         logger.warning(f"Неверная команда установки интервала от пользователя {chat_id}.")
 
-
 def run_bot():
     bot.polling(none_stop=True)
 
 if __name__ == '__main__':
-    threading.Thread(target=run_bot).start()
-    monitor_OI_changes()
+    # Запуск мониторинга OI в отдельном потоке
+    threading.Thread(target=monitor_OI_changes).start()
+    # Запуск бота
+    run_bot()
