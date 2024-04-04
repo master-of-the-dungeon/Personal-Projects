@@ -86,7 +86,7 @@ def start_message(message):
     chat_id = message.chat.id
     if chat_id not in subscribers:
         subscribers.add(chat_id)
-        bot.send_message(chat_id, "Вы подписались на уведомления об изменениях OI. Используйте /set_threshold для установки порога.")
+        bot.send_message(chat_id, "Вы подписались на уведомления об изменениях OI. Используйте /set_threshold для установки порога и /set_interval для установки временного интервала.")
         logger.info(f"Новый подписчик: {chat_id}")
     else:
         bot.send_message(chat_id, "Вы уже подписаны.")
