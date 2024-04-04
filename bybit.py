@@ -61,28 +61,23 @@ def get_open_interest(symbol, category="linear", interval="15min", timestamp=Non
         return None
 
 def monitor_OI_changes():
-    symbols = get_all_symbols()
-    if not symbols:
-        logger.warning("Нет символов для мониторинга.")
-        return
-
     while True:
         current_time = int(time.time() * 1000)
-        past_time = current_time - 900 * 1000
+        for symbol in get_all_symbols():
+            for chat_id in subscribers:
+                user_interval = intervals.get(chat_id, 15)  # Значение по умолчанию 15 минут
+                past_time = current_time - user_interval * 60 * 1000  # Пересчитываем в миллисекунды
 
-        for symbol in symbols:
+                current_oi = get_open_interest(symbol, timestamp=current_time)
+                past_oi = get_open_interest(symbol, timestamp=past_time)
 
-            current_oi = get_open_interest(symbol, timestamp=current_time)
-            past_oi = get_open_interest(symbol, timestamp=past_time)
-
-            if current_oi is not None and past_oi is not None:
-                change = ((current_oi - past_oi) / past_oi) * 100
-                for chat_id in subscribers:
+                if current_oi is not None and past_oi is not None:
+                    change = ((current_oi - past_oi) / past_oi) * 100
                     user_threshold = thresholds.get(chat_id, 5.0)  # Значение по умолчанию 5%
                     if abs(change) >= user_threshold:
-                        message = f"ВНИМАНИЕ: OI для {symbol} изменился на {change:.2f}% за последние 15 минут."
-                        logger.info(message)
+                        message = f"ВНИМАНИЕ: OI для {symbol} изменился на {change:.2f}% за последние {user_interval} минут(ы)."
                         bot.send_message(chat_id, message)
+                        logger.info(message)
             time.sleep(1)
 
 @bot.message_handler(commands=['start'])
@@ -107,6 +102,22 @@ def set_threshold(message):
     except (IndexError, ValueError):
         bot.send_message(chat_id, "Используйте команду в формате: /set_threshold <значение>.")
         logger.warning(f"Неверная команда установки порога от пользователя {chat_id}.")
+
+@bot.message_handler(commands=['set_interval'])
+def set_interval(message):
+    chat_id = message.chat.id
+    try:
+        # Пользователь должен указать интервал в минутах
+        value = int(message.text.split()[1])
+        if value < 1:  # Проверяем, чтобы значение было положительным
+            raise ValueError("Интервал должен быть больше 0")
+        intervals[chat_id] = value
+        bot.send_message(chat_id, f"Интервал уведомлений изменён на {value} минут(ы).")
+        logger.info(f"Пользователь {chat_id} установил интервал на {value} минут(ы).")
+    except (IndexError, ValueError):
+        bot.send_message(chat_id, "Используйте команду в формате: /set_interval <минуты>.")
+        logger.warning(f"Неверная команда установки интервала от пользователя {chat_id}.")
+
 
 def run_bot():
     bot.polling(none_stop=True)
