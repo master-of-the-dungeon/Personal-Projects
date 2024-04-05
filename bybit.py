@@ -37,55 +37,58 @@ def get_all_symbols():
         logger.exception(f"Ошибка запроса: {e}")
         return []
 
-def get_open_interest(symbol, category="linear", interval="15min", timestamp=None):
-    params = {
-        "symbol": symbol,
-        "category": category,
-        "intervalTime": interval,
-    }
-    if timestamp:
-        params["startTime"] = timestamp - 15 * 60 * 1000
-        params["endTime"] = timestamp
+def get_open_interest(symbol, category="inverse", interval="5min", startTime=None, endTime=None):
+    if startTime and endTime:
+        params = {
+            "symbol": symbol,
+            "category": category,
+            "intervalTime": interval,
+            "startTime": startTime,
+            "endTime": endTime
+        }
 
-    response = session.get_open_interest(**params)
+        response = session.get_open_interest(**params)
 
-    if response and response['retCode'] == 0:
-        if response['result']['list']:
-            latest_data = response['result']['list'][0]
-            return float(latest_data['openInterest'])
+        if response and response['retCode'] == 0 and response['result']['list']:
+            # Преобразование строки в число с плавающей точкой для получения значения OI
+            open_interest_values = [float(item['openInterest']) for item in response['result']['list']]
+            return open_interest_values
         else:
-            logger.warning(f"Данные OI для {symbol} недоступны.")
+            logger.error(f"Ошибка при получении данных OI для {symbol}: {response.get('retMsg', 'No error message provided')}")
             return None
     else:
-        logger.error(f"Ошибка при получении данных OI для {symbol}: {response.get('retMsg', 'Сообщение об ошибке отсутствует')}")
+        logger.error("Start time and end time must be provided for the OI data retrieval.")
         return None
 
+
+
 def monitor_OI_changes():
-    symbols = get_all_symbols()
+    symbols = get_all_symbols()  # Убедитесь, что эта функция возвращает актуальные символы для мониторинга
     if not symbols:
-        logger.warning("Нет символов для мониторинга.")
+        logger.warning("No symbols available for monitoring.")
         return
 
     while True:
         current_time = int(time.time() * 1000)
+        past_time = current_time - 5 * 60 * 1000  # Пяти минутный интервал в миллисекундах
+
         for symbol in symbols:
-            for chat_id in subscribers:
-                user_interval = intervals.get(chat_id, 15)  # Интервал по умолчанию 15 минут
-                past_time = current_time - user_interval * 60 * 1000
+            open_interest_values = get_open_interest(symbol, startTime=past_time, endTime=current_time)
 
-                current_oi = get_open_interest(symbol, timestamp=current_time)
-                past_oi = get_open_interest(symbol, timestamp=past_time)
-
-                if current_oi is not None and past_oi is not None and past_oi != 0:
+            if open_interest_values:
+                current_oi = open_interest_values[0]
+                past_oi = open_interest_values[-1]
+                if past_oi != 0:
                     change = ((current_oi - past_oi) / past_oi) * 100
-                    user_threshold = thresholds.get(chat_id, 5.0)
-                    if abs(change) >= user_threshold:
-                        message = (f"ВНИМАНИЕ: OI для {symbol} изменился на {change:.2f}% за последние {user_interval} минут.\n"
-                                   f"Текущее значение OI: {current_oi}\n"
-                                   f"Значение OI {user_interval} минут назад: {past_oi}")
-                        bot.send_message(chat_id, message)
-                        logger.info(message)
-                time.sleep(1)  # Избегаем слишком частых запросов
+                    for chat_id in subscribers:
+                        user_threshold = thresholds.get(chat_id, 0.1)  # Пользовательский порог
+                        if abs(change) >= user_threshold:
+                            message = f"ALERT: OI for {symbol} changed by {change:.2f}% in the last 5 minutes.\nCurrent OI: {current_oi}\nPrevious OI: {past_oi}"
+                            bot.send_message(chat_id, message)
+                            logger.info(message)
+            else:
+                logger.warning(f"Insufficient data for OI change calculation for {symbol}.")
+            time.sleep(1)  # Избегаем слишком частых запросов
 
 @bot.message_handler(commands=['start'])
 def start_message(message):
