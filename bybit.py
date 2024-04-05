@@ -52,7 +52,6 @@ def get_open_interest(symbol, category="linear", interval="15min", timestamp=Non
     if response and response['retCode'] == 0:
         if response['result']['list']:
             latest_data = response['result']['list'][0]
-
             return float(latest_data['openInterest'])
         else:
             logger.warning(f"Данные OI для {symbol} недоступны.")
@@ -62,24 +61,31 @@ def get_open_interest(symbol, category="linear", interval="15min", timestamp=Non
         return None
 
 def monitor_OI_changes():
+    symbols = get_all_symbols()
+    if not symbols:
+        logger.warning("Нет символов для мониторинга.")
+        return
+
     while True:
         current_time = int(time.time() * 1000)
-        for symbol in get_all_symbols():
+        for symbol in symbols:
             for chat_id in subscribers:
-                user_interval = intervals.get(chat_id, 15)  # Значение по умолчанию 15 минут
-                past_time = current_time - user_interval * 60 * 1000  # Пересчитываем в миллисекунды
+                user_interval = intervals.get(chat_id, 15)  # Интервал по умолчанию 15 минут
+                past_time = current_time - user_interval * 60 * 1000
 
                 current_oi = get_open_interest(symbol, timestamp=current_time)
                 past_oi = get_open_interest(symbol, timestamp=past_time)
 
-                if current_oi is not None and past_oi is not None:
+                if current_oi is not None and past_oi is not None and past_oi != 0:
                     change = ((current_oi - past_oi) / past_oi) * 100
-                    user_threshold = thresholds.get(chat_id, 5.0)  # Значение по умолчанию 5%
+                    user_threshold = thresholds.get(chat_id, 5.0)
                     if abs(change) >= user_threshold:
-                        message = f"ВНИМАНИЕ: OI для {symbol} изменился на {change:.2f}% за последние {user_interval} минут(ы)."
+                        message = (f"ВНИМАНИЕ: OI для {symbol} изменился на {change:.2f}% за последние {user_interval} минут.\n"
+                                   f"Текущее значение OI: {current_oi}\n"
+                                   f"Значение OI {user_interval} минут назад: {past_oi}")
                         bot.send_message(chat_id, message)
                         logger.info(message)
-            time.sleep(60)  # Чтобы избежать слишком частых запросов, лучше установить паузу
+                time.sleep(1)  # Избегаем слишком частых запросов
 
 @bot.message_handler(commands=['start'])
 def start_message(message):
@@ -109,7 +115,7 @@ def set_interval(message):
     chat_id = message.chat.id
     try:
         value = int(message.text.split()[1])
-        if value < 1:  # Проверяем, чтобы значение было положительным
+        if value < 1:
             raise ValueError("Интервал должен быть больше 0")
         intervals[chat_id] = value
         bot.send_message(chat_id, f"Интервал уведомлений изменён на {value} минут(ы).")
@@ -122,7 +128,5 @@ def run_bot():
     bot.polling(none_stop=True)
 
 if __name__ == '__main__':
-    # Запуск мониторинга OI в отдельном потоке
     threading.Thread(target=monitor_OI_changes).start()
-    # Запуск бота
     run_bot()
