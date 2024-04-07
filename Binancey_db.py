@@ -43,7 +43,7 @@ TELEGRAM_TOKEN = '7066463143:AAE0vEzHOCAYL6SFoENoxHTNWMKwcRg_VxA'
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 subscribers = set()
-thresholds = {}
+thresholds = {}   
 intervals = {}
 
 @bot.message_handler(commands=['start'])
